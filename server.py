@@ -4,12 +4,12 @@ import os
 import threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from agent import run, request
-from shopping import optimize
+from api import request
 from tutor import teach
 
 ROOT = Path(__file__).resolve().parent
 LOCK = threading.Lock()
+ACTIVE = {}
 
 
 def load_key():
@@ -41,7 +41,25 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Host') != expected or self.headers.get('Origin') not in (None, 'http://' + expected):
             self.send_error(403)
             return
-        if self.path not in ('/api/run', '/api/tutor'):
+        if self.path == '/api/stop':
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size < 1024:
+                    raise ValueError()
+                data = json.loads(self.rfile.read(size))
+                event = ACTIVE.get(data.get('request_id'))
+                if event is not None:
+                    event.set()
+                body = json.dumps({'stopped': event is not None}).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (ValueError, TypeError, AttributeError):
+                self.send_error(400)
+            return
+        if self.path != '/api/tutor':
             self.send_error(404)
             return
         self.send_response(200)
@@ -52,6 +70,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write((json.dumps({'type': kind, **data}, ensure_ascii=False) + '\n').encode())
             self.wfile.flush()
         acquired = False
+        task_id = None
         try:
             size = int(self.headers.get('Content-Length', '0'))
             if not 0 < size <= 100000:
@@ -66,33 +85,38 @@ class Handler(BaseHTTPRequestHandler):
             acquired = LOCK.acquire(blocking=False)
             if not acquired:
                 raise RuntimeError('已有任务执行中，请稍后重试')
+            task_id = data.get('request_id')
+            if task_id is not None and (not isinstance(task_id, str) or not 1 <= len(task_id) <= 100):
+                raise ValueError('请求标识无效')
+            cancelled = threading.Event()
+            if task_id:
+                ACTIVE[task_id] = cancelled
+            def check_cancelled():
+                if cancelled.is_set():
+                    raise RuntimeError('任务已暂停')
+            def model_call(body):
+                check_cancelled()
+                result = request('chat/completions', key, body)
+                check_cancelled()
+                return result
+            def trace(message):
+                check_cancelled()
+                emit('trace', message=message)
             key = load_key()
             models = [m['id'] for m in request('models', key)['data']]
             if model not in models:
                 raise ValueError('模型不在账户实际可用列表中')
-            if self.path == '/api/tutor':
-                result = teach(data.get('goal'), data.get('level'), data.get('history', []), data.get('student', ''), model, lambda body: request('chat/completions', key, body), lambda message: emit('trace', message=message))
-                emit('result', **result)
-                return
-            shopping = data.get('shopping')
-            optimize(shopping)
-            prompt = data.get('prompt')
-            if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
-                raise ValueError('请填写有效目标')
-            quote = None
-            def trace(message):
-                nonlocal quote
-                # 只接受真实工具执行后产生的观察，不以浏览器计算代替。
-                prefix = '[Observe 工具结果] '
-                if message.startswith(prefix):
-                    result = json.loads(message[len(prefix):]).get('result')
-                    if isinstance(result, dict) and '最低实付' in result:
-                        quote = result
-                emit('trace', message=message)
-            answer = run(prompt, model, lambda body: request('chat/completions', key, body), trace=trace, shopping=shopping)
-            if quote is None:
-                raise RuntimeError('模型没有执行优惠工具，本次未通过验收，请重试')
-            emit('result', answer=answer, quote=quote)
+            result = teach(data.get('goal'), data.get('history', []), data.get('student', ''), model, model_call, trace, mode=data.get('mode', 'conversation'))
+            if data.get('mode', 'conversation') == 'conversation' and data.get('student', '').strip():
+                trace('[Action] 根据本轮真实回答更新右侧素材草稿')
+                try:
+                    facts = data.get('history', []) + [{'role': 'user', 'content': data['student']}]
+                    material = teach(data['goal'], facts, '', model, model_call, trace, mode='card')
+                    result['live_card'] = material['card']
+                except (ValueError, RuntimeError):
+                    check_cancelled()
+                    result['material_warning'] = '对话已完成，但素材更新失败；保留上一版，下一轮回答后会再次更新。'
+            emit('result', **result)
         except (BrokenPipeError, ConnectionResetError):
             pass
         except (ValueError, RuntimeError) as error:
@@ -101,6 +125,8 @@ class Handler(BaseHTTPRequestHandler):
             emit('error', message='服务执行异常，任务尚未完成；请检查配置后重试')
         finally:
             if acquired:
+                if isinstance(task_id, str):
+                    ACTIVE.pop(task_id, None)
                 LOCK.release()
 
 
