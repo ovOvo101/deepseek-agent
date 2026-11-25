@@ -6,6 +6,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from agent import run, request
 from shopping import optimize
+from tutor import teach
 
 ROOT = Path(__file__).resolve().parent
 LOCK = threading.Lock()
@@ -40,7 +41,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Host') != expected or self.headers.get('Origin') not in (None, 'http://' + expected):
             self.send_error(403)
             return
-        if self.path != '/api/run':
+        if self.path not in ('/api/run', '/api/tutor'):
             self.send_error(404)
             return
         self.send_response(200)
@@ -59,11 +60,9 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(size))
             if not isinstance(data, dict):
                 raise ValueError('请求须为对象')
-            shopping = data.get('shopping')
-            optimize(shopping)
-            prompt, model = data.get('prompt'), data.get('model')
-            if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000 or not isinstance(model, str) or not 1 <= len(model) <= 100:
-                raise ValueError('请填写有效目标和模型 ID')
+            model = data.get('model')
+            if not isinstance(model, str) or not 1 <= len(model) <= 100:
+                raise ValueError('请填写有效模型 ID')
             acquired = LOCK.acquire(blocking=False)
             if not acquired:
                 raise RuntimeError('已有任务执行中，请稍后重试')
@@ -71,6 +70,15 @@ class Handler(BaseHTTPRequestHandler):
             models = [m['id'] for m in request('models', key)['data']]
             if model not in models:
                 raise ValueError('模型不在账户实际可用列表中')
+            if self.path == '/api/tutor':
+                result = teach(data.get('goal'), data.get('level'), data.get('history', []), data.get('student', ''), model, lambda body: request('chat/completions', key, body), lambda message: emit('trace', message=message))
+                emit('result', **result)
+                return
+            shopping = data.get('shopping')
+            optimize(shopping)
+            prompt = data.get('prompt')
+            if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
+                raise ValueError('请填写有效目标')
             quote = None
             def trace(message):
                 nonlocal quote

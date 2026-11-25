@@ -19,7 +19,7 @@ class ServerTests(unittest.TestCase):
         base = f'http://127.0.0.1:{http.server_port}'
         try:
             with urllib.request.urlopen(base) as page:
-                self.assertIn('运行 Agent', page.read().decode())
+                self.assertIn('AI 英语外教', page.read().decode())
             with self.assertRaises(urllib.error.HTTPError) as error:
                 urllib.request.urlopen(base + '/.local-key.json')
             self.assertEqual(error.exception.code, 404)
@@ -36,6 +36,18 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(events[-1]['quote']['最低实付'], '336.00')
             self.assertTrue(any('optimize_discounts' in e.get('message', '') for e in events))
             self.assertNotIn('test-only', json.dumps(events))
+            from test_tutor import action, LESSON
+            def tutor_api(path, key, payload=None):
+                return {'data': [{'id': 'mock'}]} if path == 'models' else action('teach_and_wait', LESSON)
+            body = json.dumps({'goal': '咖啡店点单', 'level': 'A2', 'history': [], 'student': '', 'model': 'mock'}).encode()
+            with patch.object(server, 'load_key', return_value='test-only'), patch.object(server, 'request', side_effect=tutor_api):
+                req = urllib.request.Request(base + '/api/tutor', data=body, headers={'Content-Type': 'application/json', 'Origin': base})
+                with urllib.request.urlopen(req) as output:
+                    events = [json.loads(line) for line in output]
+            self.assertEqual(events[-1]['status'], 'waiting_for_student')
+            self.assertEqual(events[-1]['lesson']['question'], 'What would you like?')
+            self.assertNotIn('test-only', json.dumps(events))
+
         finally:
             http.shutdown()
             http.server_close()
