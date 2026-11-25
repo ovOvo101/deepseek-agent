@@ -2,17 +2,11 @@
 import json
 from speaking_prompt import SPOKEN_STYLE, MATERIAL_STYLE
 
-# 借鉴熟悉生活话题，自拟聊天问题，不使用官方真题标签。
-CHAT_STARTERS = {
-    '住处': {'opening': "What's a spot near your home that you like?", 'follow_up': "What do you usually do there?"},
-    '工作学习': {'opening': "What's one small thing you enjoyed at work or school lately?", 'follow_up': "What made that moment nice?"},
-    '空闲时间': {'opening': "What do you like doing when you have a little time to yourself?", 'follow_up': "When did you last do that?"},
-    '食物': {'opening': "What's something you like eating on a busy day?", 'follow_up': "Do you usually make it or buy it?"},
-    '周末': {'opening': "Did you do anything relaxing last weekend?", 'follow_up': "What was the nicest part?"},
-    '音乐': {'opening': "What have you been listening to lately?", 'follow_up': "When do you usually listen to it?"},
-    '朋友': {'opening': "What do you and your friends usually do together?", 'follow_up': "Have you done that recently?"},
-    '日常小事': {'opening': "What's a small thing that makes your day better?", 'follow_up': "Did that happen today?"},
-}
+from pathlib import Path
+
+# 只保存参考资料的主题与自行改写的聊天问题，不复制范文。
+TOPICS = json.loads((Path(__file__).resolve().parent / 'topics.json').read_text())
+CHAT_STARTERS = {item['title']: {'opening': item['opening'], 'follow_up': item['follow_up']} for item in TOPICS}
 
 
 def tool(name, description, properties, required):

@@ -16,6 +16,11 @@ class ServerTests(unittest.TestCase):
         thread.start()
         base = f'http://127.0.0.1:{http.server_port}'
         try:
+            with urllib.request.urlopen(base + '/api/topics') as output:
+                topics = json.load(output)
+            self.assertEqual(len(topics), 26)
+            self.assertEqual(len({t['title'] for t in topics}), len(topics))
+            self.assertTrue(all(t['opening'].count('?') == 1 for t in topics))
             with urllib.request.urlopen(base) as page:
                 self.assertIn('Story Atelier', page.read().decode())
             with self.assertRaises(urllib.error.HTTPError) as error:
