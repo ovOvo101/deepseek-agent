@@ -98,16 +98,9 @@ test_server.py      网页接口集成测试
 
 ## 教学设计参考
 
-口语表达以自然沟通为目标，接受上下文清楚的省略与短回答，适当使用缩写，不为“高级”而强行扩写。
+口语表达以自然沟通为目标，接受上下文清楚的省略与短回答，适当使用缩写。
 
 - [Cambridge：Ellipsis](https://dictionary.cambridge.org/grammar/british-grammar/ellipsis)
 - [Cambridge：Contractions](https://dictionary.cambridge.org/grammar/british-grammar/contractions)
 - [British Council：Short forms](https://learnenglish.britishcouncil.org/free-resources/grammar/english-grammar-reference/short-forms)
 - [IDP IELTS：Speaking Part 1](https://ielts.idp.com/prepare/article-ielts-speaking-test-part-1/)
-
-
-### 话题来源与界面
-
-左侧提供26个生活主题，可输入关键词搜索。主题参考用户提供的口语DEMO资料Part 1部分，开场与跟进问题由项目重新编写，适合每次一两句的日常聊天；不复制范文，也不标为官方或当季真题。topics.json为前后端共享的话题来源，可自行增补。原始PDF不加入公开仓库。
-
-新版界面采用奶油白、灰米色及棕色三栏布局。左上设置按钮可展开目标与模型配置，Enter发送、Shift+Enter换行（中文输入法选字不触发发送），右侧可复制草稿并查看字数。
